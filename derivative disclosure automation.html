@@ -1,0 +1,1122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Workiva Automation - Derivative Disclosure Pipeline</title>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: #1e293b;
+            --accent-blue: #38bdf8;
+            --accent-green: #4ade80;
+            --accent-purple: #c084fc;
+            --accent-amber: #f59e0b;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --overlay-bg: rgba(15, 23, 42, 0.85);
+            --sheet-border: #334155;
+            --node-blue: #131c31;
+            --node-border: #334155;
+            --line-color: #24324d;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            margin: 0;
+            padding: 40px 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        h1 {
+            color: var(--text-main);
+            margin-bottom: 30px;
+            font-weight: 700;
+            font-size: 2rem;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 1200px;
+        }
+
+        .pipeline-card {
+            background-color: #0b1329;
+            border-radius: 12px;
+            padding: 40px;
+            box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.5);
+            border: 1px solid #1e293b;
+        }
+
+        .pipeline-header {
+            margin-top: 0;
+            margin-bottom: 12px;
+            color: var(--accent-blue);
+            font-size: 1.6rem;
+            font-weight: 600;
+        }
+
+        .pipeline-desc {
+            color: var(--text-muted);
+            margin-bottom: 60px;
+            font-size: 0.95rem;
+            line-height: 1.6;
+        }
+
+        .canvas {
+            background-color: #070c19;
+            border-radius: 8px;
+            height: 200px;
+            position: relative;
+            overflow: hidden;
+            border: 1px dashed #1e293b;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 40px;
+        }
+
+        .network-svg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        .network-svg line {
+            stroke: var(--line-color);
+            stroke-width: 3;
+            transition: stroke 0.5s;
+        }
+
+        .network-svg line.active-path {
+            stroke: var(--accent-green);
+        }
+
+        .node {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            z-index: 2;
+            width: 130px;
+            text-align: center;
+            cursor: pointer;
+            position: relative;
+        }
+
+        .icon-box {
+            width: 64px;
+            height: 64px;
+            background-color: var(--node-blue);
+            border: 2px solid var(--node-border);
+            border-radius: 16px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 26px;
+            margin-bottom: 10px;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+        }
+
+        .node:hover .icon-box {
+            border-color: var(--accent-blue);
+            box-shadow: 0 0 15px rgba(56, 189, 248, 0.3);
+            transform: translateY(-3px);
+        }
+
+        .node-label {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            font-weight: 600;
+            line-height: 1.3;
+            transition: color 0.3s;
+        }
+
+        .node:hover .node-label {
+            color: var(--text-main);
+        }
+
+        .auth-inner-icon { z-index: 3; position: relative; }
+        .auth-ring-container {
+            position: absolute; top: -2px; left: -2px; right: -2px; bottom: -2px;
+            border-radius: 16px; overflow: hidden; pointer-events: none; z-index: 1;
+        }
+        .auth-ring-dots {
+            position: absolute; top: -50%; left: -50%; width: 200%; height: 200%;
+            background: conic-gradient(transparent, var(--accent-blue), transparent 30%);
+            opacity: 0;
+        }
+        .auth-ring-mask {
+            position: absolute; top: 2px; left: 2px; right: 2px; bottom: 2px;
+            background-color: #131c31; border-radius: 14px;
+        }
+        .auth-success-box {
+            position: absolute; top: -2px; left: -2px; right: -2px; bottom: -2px;
+            border-radius: 16px; border: 2px solid var(--accent-green); opacity: 0; background: transparent; z-index: 2;
+            box-shadow: 0 0 10px rgba(74, 222, 128, 0.4);
+        }
+
+        .node.processing .auth-ring-dots {
+            opacity: 1;
+            animation: runRing 2s infinite linear;
+        }
+        .node.completed .auth-success-box {
+            opacity: 1;
+        }
+
+        @keyframes runRing {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .packet {
+            position: absolute;
+            font-size: 16px;
+            z-index: 3;
+            opacity: 0;
+            pointer-events: none;
+            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
+            transition: opacity 0.1s;
+        }
+
+        .popup-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: var(--overlay-bg);
+            z-index: 100; display: flex; justify-content: center; align-items: center; opacity: 0; pointer-events: none;
+            transition: opacity 0.3s ease; backdrop-filter: blur(4px);
+        }
+        .popup-overlay.active { opacity: 1; pointer-events: auto; }
+        
+        .popup-card {
+            background-color: var(--card-bg); border: 1px solid #334155; border-radius: 16px; width: 95%; max-width: 1100px;
+            padding: 32px; position: relative; transform: scale(0.95); transition: transform 0.3s ease;
+            max-height: 85vh; overflow-y: auto;
+        }
+        .popup-overlay.active .popup-card { transform: scale(1); }
+        .popup-close { position: absolute; top: 20px; right: 20px; background: none; border: none; color: var(--text-muted); font-size: 26px; cursor: pointer; }
+        .popup-title { font-size: 1.4rem; font-weight: 700; color: var(--text-main); margin-top: 0; margin-bottom: 8px; display: flex; align-items: center; gap: 10px; }
+        .popup-subtitle { color: var(--text-muted); font-size: 0.9rem; margin-bottom: 24px; }
+        .popup-pane { background-color: #070c19; border-radius: 8px; border: 1px solid #2d3748; padding: 20px; min-height: 200px; }
+
+        .explorer-table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+            font-size: 0.9rem;
+        }
+        .explorer-thead th {
+            color: #cbd5e1;
+            font-weight: 500;
+            padding: 10px 14px;
+            border-bottom: 1px solid #334155;
+            font-size: 0.85rem;
+        }
+        .explorer-row {
+            border-bottom: 1px solid #1e293b;
+            transition: background 0.2s;
+        }
+        .explorer-row:hover {
+            background-color: rgba(56, 189, 248, 0.08);
+        }
+        .explorer-row td {
+            padding: 12px 14px;
+            color: #e2e8f0;
+            vertical-align: middle;
+        }
+        .explorer-row.hidden-row {
+            display: none;
+        }
+        .explorer-name-cell {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .explorer-icon {
+            font-size: 1.1rem;
+        }
+        .explorer-date { color: #94a3b8; font-family: monospace; }
+        .explorer-type { color: #94a3b8; }
+        .explorer-size { text-align: right; font-family: monospace; color: #e2e8f0; }
+
+        .explorer-view-btn {
+            background: #0f172a;
+            border: 1px solid #334155;
+            color: #38bdf8;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+        }
+        .explorer-view-btn:hover:not(:disabled) {
+            background: #1e293b;
+            border-color: #38bdf8;
+            box-shadow: 0 0 8px rgba(56, 189, 248, 0.2);
+        }
+        .explorer-view-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            color: var(--text-muted);
+        }
+
+        .status-spinner {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            color: var(--accent-blue);
+        }
+        .status-spinner::before {
+            content: "⚙️";
+            display: inline-block;
+            animation: spin 1s infinite linear;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .nested-preview-wrapper {
+            background-color: #090d16;
+            padding: 15px;
+            border-radius: 6px;
+            border: 1px solid #1e293b;
+            margin-top: 10px;
+            overflow-x: auto;
+        }
+        .nested-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-family: monospace;
+            font-size: 0.8rem;
+            color: #cbd5e1;
+            white-space: nowrap;
+        }
+        .nested-table th {
+            background-color: #111827;
+            color: #94a3b8;
+            padding: 8px 12px;
+            border: 1px solid #1e293b;
+            font-weight: 600;
+            text-align: left;
+        }
+        .nested-table td {
+            padding: 8px 12px;
+            border: 1px solid #1e293b;
+            color: #f8fafc;
+        }
+        .nested-table tbody tr:hover {
+            background-color: rgba(255, 255, 255, 0.03);
+        }
+
+        .report-book { width: 100%; background: #ffffff; color: #1e293b; border-radius: 8px; padding: 24px; box-shadow: inset 0 0 20px rgba(0,0,0,0.05); }
+        .report-header { border-bottom: 2px solid #0f172a; padding-bottom: 10px; margin-bottom: 20px; }
+        .report-title { font-size: 1.3rem; font-weight: 800; color: #0f172a; }
+        .report-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+        .report-section { border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px; background: #f8fafc; }
+        .report-sect-title { font-weight: bold; color: #1e293b; font-size: 0.85rem; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+
+        .pulse-key { font-size: 64px; display: flex; justify-content: center; width: 100%; animation: keyWave 2s infinite ease-in-out; }
+        @keyframes keyWave { 0%, 100% { transform: scale(1) rotate(0deg); opacity: 0.9; } 50% { transform: scale(1.15) rotate(15deg); color: var(--accent-blue); opacity: 1; } }
+   
+     /* Publish Report Component Styles with White Table & Sheets */
+        .report-book { width: 100%; background: #ffffff; color: #1e293b; border-radius: 8px; padding: 24px; box-shadow: inset 0 0 20px rgba(0,0,0,0.05); }
+        .report-header { border-bottom: 2px solid #0f172a; padding-bottom: 10px; margin-bottom: 20px; }
+        .report-title { font-size: 1.3rem; font-weight: 800; color: #0f172a; }
+        
+        .report-tabs { display: flex; gap: 8px; border-bottom: 1px solid #cbd5e1; margin-bottom: 16px; padding-bottom: 0; }
+        .report-tab-btn { background: #f1f5f9; border: 1px solid #cbd5e1; border-bottom: none; padding: 8px 16px; border-top-left-radius: 6px; border-top-right-radius: 6px; font-weight: 600; font-size: 0.85rem; color: #64748b; cursor: pointer; transition: all 0.2s; }
+        .report-tab-btn.active { background: #ffffff; color: #0f172a; border-color: #cbd5e1; border-bottom: 2px solid #ffffff; margin-bottom: -1px; }
+        
+        .report-sheet-pane { display: none; background: #ffffff; border-radius: 6px; padding: 4px; animation: fadeIn 0.4s ease; }
+        .report-sheet-pane.active { display: block; }
+
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+
+        .pub-white-table { width: 100%; border-collapse: collapse; background: #ffffff; font-size: 0.85rem; }
+        .pub-white-table th { background: #f8fafc; color: #0f172a; padding: 10px 14px; border: 1px solid #e2e8f0; font-weight: 700; text-align: left; }
+        .pub-white-table td { padding: 10px 14px; border: 1px solid #e2e8f0; color: #334155; }
+        .pub-white-table tbody tr:hover { background-color: #f8fafc; }
+
+        .pulse-key { font-size: 64px; display: flex; justify-content: center; width: 100%; animation: keyWave 2s infinite ease-in-out; }
+        @keyframes keyWave { 0%, 100% { transform: scale(1) rotate(0deg); opacity: 0.9; } 50% { transform: scale(1.15) rotate(15deg); color: var(--accent-blue); opacity: 1; } }
+  
+   
+   
+   
+   
+   </style>
+</head>
+<body>
+
+    <h1>Workiva Automation</h1>
+
+    <div class="container">
+        <div class="pipeline-card">
+            <h2 class="pipeline-header">Derivative Disclosure Pipeline</h2>
+            <div class="pipeline-desc">Automates the complete derivative disclosure workflow from source systems to published reports.
+Extracts, transforms, consolidates, and publishes financial data through a streamlined processing pipeline.</div>
+            
+            <div class="canvas" id="pipeline-canvas">
+                <svg class="network-svg" id="svg-layer">
+                    <line id="line-auth-src"></line>
+                    <line id="line-src-ext"></line>
+                    <line id="line-ext-trn"></line>
+                    <line id="line-trn-cons"></line>
+                    <line id="line-cons-pub"></line>
+                </svg>
+
+                <div class="packet" id="p-sig">⚡</div>
+                
+                <div class="packet" id="p-f1-1">📄</div><div class="packet" id="p-f1-2">📄</div><div class="packet" id="p-f1-3">📄</div><div class="packet" id="p-f1-4">📄</div><div class="packet" id="p-f1-5">📄</div>
+
+                <div class="packet" id="p-f2-1">📁</div><div class="packet" id="p-f2-2">📁</div><div class="packet" id="p-f2-3">📁</div><div class="packet" id="p-f2-4">📁</div><div class="packet" id="p-f2-5">📁</div>
+                <div class="packet" id="p-f3-1">📊</div><div class="packet" id="p-f3-2">📊</div><div class="packet" id="p-f3-3">📊</div><div class="packet" id="p-f3-4">📊</div><div class="packet" id="p-f3-5">📊</div>
+                <div class="packet" id="p-rep" style="font-size:24px;">📘</div>
+
+                <div class="node" id="node-auth" data-node="auth">
+                    <div class="icon-box">
+                        <span class="auth-inner-icon">🔑</span>
+                        <div class="auth-ring-container"><div class="auth-ring-dots"></div><div class="auth-ring-mask"></div></div>
+                        <div class="auth-success-box"></div>
+                    </div>
+                    <div class="node-label">Authentication</div>
+                </div>
+
+                <div class="node" id="node-src" data-node="src">
+                    <div class="icon-box">
+                        <span class="auth-inner-icon">🗄️</span>
+                        <div class="auth-ring-container"><div class="auth-ring-dots"></div><div class="auth-ring-mask"></div></div>
+                        <div class="auth-success-box"></div>
+                    </div>
+                    <div class="node-label">Source Systems</div>
+                </div>
+
+                <div class="node" id="node-ext" data-node="ext">
+                    <div class="icon-box">
+                        <span class="auth-inner-icon">📥</span>
+                        <div class="auth-ring-container"><div class="auth-ring-dots"></div><div class="auth-ring-mask"></div></div>
+                        <div class="auth-success-box"></div>
+                    </div>
+                    <div class="node-label">Data Extraction</div>
+                </div>
+
+                <div class="node" id="node-trn" data-node="trn">
+                    <div class="icon-box">
+                        <span class="auth-inner-icon">⚙️</span>
+                        <div class="auth-ring-container"><div class="auth-ring-dots"></div><div class="auth-ring-mask"></div></div>
+                        <div class="auth-success-box"></div>
+                    </div>
+                    <div class="node-label">Transformation Engine</div>
+                </div>
+
+                <div class="node" id="node-cons" data-node="cons">
+                    <div class="icon-box">
+                        <span class="auth-inner-icon">🏢</span>
+                        <div class="auth-ring-container"><div class="auth-ring-dots"></div><div class="auth-ring-mask"></div></div>
+                        <div class="auth-success-box"></div>
+                    </div>
+                    <div class="node-label">Consolidation Engine</div>
+                </div>
+
+                <div class="node" id="node-pub" data-node="pub">
+                    <div class="icon-box">
+                        <span class="auth-inner-icon">🖥️</span>
+                        <div class="auth-ring-container"><div class="auth-ring-dots"></div><div class="auth-ring-mask"></div></div>
+                        <div class="auth-success-box"></div>
+                    </div>
+                    <div class="node-label">Publish Derivative Disclosure</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="popup-overlay" id="node-popup">
+        <div class="popup-card">
+            <button class="popup-close" id="popup-close-btn">&times;</button>
+            <div class="popup-title" id="pop-title">Node Specification</div>
+            <div class="popup-subtitle" id="pop-subtitle">Internal pipeline processing registry</div>
+            <div class="popup-pane" id="pop-pane"></div>
+        </div>
+    </div>
+
+    <div class="popup-overlay" id="data-preview-popup" style="z-index: 110;">
+        <div class="popup-card" style="max-width: 1050px;">
+            <button class="popup-close" id="data-preview-close-btn">&times;</button>
+            <div class="popup-title" id="data-preview-title">📊 Raw Data View</div>
+            <div class="popup-subtitle">Isolated matrix elements from extracted schema</div>
+            <div class="popup-pane" id="data-preview-pane"></div>
+        </div>
+    </div>
+
+    <script>
+        let extractionTimer = null;
+        let transTimer = null;
+        let consTimer = null;
+
+        const globalFileDatabase = [
+            { name: "HOCW_gross_raw_24-07-2026.csv", category: "gross_raw", type: "Comma Separated Values (.csv)", size: "24 KB", lastUpdated: "24-07-2026 14:46", extractable: true },
+            { name: "HOCW_notional_raw_24-07-2026.csv", category: "notional_raw", type: "Comma Separated Values (.csv)", size: "18 KB", lastUpdated: "24-07-2026 14:46", extractable: true },
+            { name: "HOCW_net_raw_24-07-2026.csv", category: "net_raw", type: "Comma Separated Values (.csv)", size: "12 KB", lastUpdated: "24-07-2026 14:46", extractable: true },
+            { name: "HOCW_cash_raw_24-07-2026.csv", category: "cash_raw", type: "Comma Separated Values (.csv)", size: "15 KB", lastUpdated: "24-07-2026 14:46", extractable: true },
+            { name: "HOCW_counterparty_raw_24-07-2026.csv", category: "counterparty_raw", type: "Comma Separated Values (.csv)", size: "16 KB", lastUpdated: "24-07-2026 14:46", extractable: true },
+            
+            { name: "HOCW_gross_raw_31-12-2024.csv", category: "gross_raw_2024", type: "Comma Separated Values (.csv)", size: "22 KB", lastUpdated: "31-12-2024 23:59", extractable: false },
+            { name: "HOCW_notional_raw_31-12-2024.csv", category: "notional_raw_2024", type: "Comma Separated Values (.csv)", size: "17 KB", lastUpdated: "31-12-2024 23:59", extractable: false },
+            { name: "HOCW_net_raw_31-12-2024.csv", category: "net_raw_2024", type: "Comma Separated Values (.csv)", size: "11 KB", lastUpdated: "31-12-2024 23:59", extractable: false },
+            { name: "HOCW_cash_raw_31-12-2024.csv", category: "cash_raw_2024", type: "Comma Separated Values (.csv)", size: "14 KB", lastUpdated: "31-12-2024 23:59", extractable: false },
+            { name: "HOCW_counterparty_raw_31-12-2024.csv", category: "counterparty_raw_2024", type: "Comma Separated Values (.csv)", size: "15 KB", lastUpdated: "31-12-2024 23:59", extractable: false },
+
+            { name: "Derivative Disclosure Gross Data", category: "gross_trans", type: "Workbook Sheet Matrix", size: "28 KB", lastUpdated: "24-07-2026 14:50" },
+            { name: "Derivative Disclosure Notional Data", category: "notional_trans", type: "Workbook Sheet Matrix", size: "22 KB", lastUpdated: "24-07-2026 14:50" },
+            { name: "Net Derivative Contracts Data", category: "net_trans", type: "Workbook Sheet Matrix", size: "14 KB", lastUpdated: "24-07-2026 14:50" },
+            { name: "Cash Collateral Data", category: "cash_trans", type: "Workbook Sheet Matrix", size: "13 KB", lastUpdated: "24-07-2026 14:50" },
+            { name: "Counterparty Netting Data", category: "counterparty_trans", type: "Workbook Sheet Matrix", size: "15 KB", lastUpdated: "24-07-2026 14:50" },
+
+            // Consolidation targets covering all categories
+            { name: "Derivative Disclosure Gross", category: "gross_cons", type: "Consolidated Output Matrix", size: "32 KB", lastUpdated: "24-07-2026 14:55" },
+            { name: "Derivative Disclosure Notional", category: "notional_cons", type: "Consolidated Output Matrix", size: "26 KB", lastUpdated: "24-07-2026 14:55" },
+            { name: "Net Derivative Contracts", category: "net_cons", type: "Consolidated Output Matrix", size: "18 KB", lastUpdated: "24-07-2026 14:55" },
+            { name: "Cash Collateral Disclosure", category: "cash_cons", type: "Consolidated Output Matrix", size: "17 KB", lastUpdated: "24-07-2026 14:55" },
+            { name: "Counterparty Netting Disclosure", category: "counterparty_cons", type: "Consolidated Output Matrix", size: "19 KB", lastUpdated: "24-07-2026 14:55" }
+        ];
+
+        const snapshotDemoRecords = {
+            gross_raw: `
+            <div class="nested-preview-wrapper">
+                <table class="nested-table">
+                    <thead>
+                        <tr><th>approvalsnapshotid</th><th>accountingdate</th><th>businessunitacronym</th><th>finderivativeriskcategory</th><th>clearingmechanism</th><th>assetorliability</th><th>roundingconvention</th><th>fairvalue</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>1767200000000</td><td>12/31/2025</td><td>HOCW</td><td>Interest rate contracts</td><td>Exchange-traded</td><td>Liability</td><td>Thousands</td><td>-248</td></tr>
+                        <tr><td>1767200000000</td><td>12/31/2025</td><td>HOCW</td><td>Equity contracts</td><td>Exchange-traded</td><td>Liability</td><td>Thousands</td><td>-2151</td></tr>
+                        <tr><td>1767200000000</td><td>12/31/2025</td><td>HOCW</td><td>Equity contracts</td><td>Exchange-traded</td><td>Asset</td><td>Thousands</td><td>1136</td></tr>
+                        <tr><td>1767200000000</td><td>12/31/2025</td><td>HOCW</td><td>Foreign exchange contracts</td><td>OTC-bilateral</td><td>Asset</td><td>Thousands</td><td>178</td></tr>
+                        <tr><td>1767200000000</td><td>12/31/2025</td><td>HOCW</td><td>Commodity contracts</td><td>Exchange-traded</td><td>Asset</td><td>Thousands</td><td>4794</td></tr>
+                        <tr><td>1767200000000</td><td>12/31/2025</td><td>HOCW</td><td>Equity contracts</td><td>OTC-bilateral</td><td>Asset</td><td>Thousands</td><td>34</td></tr>
+                        <tr><td>1767200000000</td><td>12/31/2025</td><td>HOCW</td><td>Foreign exchange contracts</td><td>OTC-bilateral</td><td>Liability</td><td>Thousands</td><td>-70</td></tr>
+                        <tr><td>1767200000000</td><td>12/31/2025</td><td>HOCW</td><td>Interest rate contracts</td><td>Exchange-traded</td><td>Asset</td><td>Thousands</td><td>789</td></tr>
+                        <tr><td>1767200000000</td><td>12/31/2025</td><td>HOCW</td><td>Commodity contracts</td><td>Exchange-traded</td><td>Liability</td><td>Thousands</td><td>-4443</td></tr>
+                        <tr><td>1767200000000</td><td>12/31/2025</td><td>HOCW</td><td>Foreign exchange contracts</td><td>Exchange-traded</td><td>Asset</td><td>Thousands</td><td>86</td></tr>
+                        <tr><td>1767200000000</td><td>12/31/2025</td><td>HOCW</td><td>Equity contracts</td><td>OTC-bilateral</td><td>Liability</td><td>Thousands</td><td>-48</td></tr>
+                    </tbody>
+                </table>
+            </div>`,
+            notional_raw: `
+            <div class="nested-preview-wrapper">
+                <table class="nested-table">
+                    <thead>
+                        <tr><th>approvalsnapshotid</th><th>accountingdate</th><th>businessunitacronym</th><th>finderivativeriskcategory</th><th>clearingmechanism</th><th>notional</th><th>roundingconvention</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>1767200000000</td><td>12/31/2025</td><td>HOCW</td><td>Equity contracts</td><td>Exchange-traded</td><td>1108794</td><td>Thousands</td></tr>
+                        <tr><td>1767200000000</td><td>12/31/2025</td><td>HOCW</td><td>Foreign exchange contracts</td><td>OTC-bilateral</td><td>160823</td><td>Thousands</td></tr>
+                        <tr><td>1767200000000</td><td>12/31/2025</td><td>HOCW</td><td>Commodity contracts</td><td>Exchange-traded</td><td>709548</td><td>Thousands</td></tr>
+                        <tr><td>1767200000000</td><td>12/31/2025</td><td>HOCW</td><td>Equity contracts</td><td>OTC-bilateral</td><td>18581</td><td>Thousands</td></tr>
+                        <tr><td>1767200000000</td><td>12/31/2025</td><td>HOCW</td><td>Interest rate contracts</td><td>Exchange-traded</td><td>1249120</td><td>Thousands</td></tr>
+                        <tr><td>1767200000000</td><td>12/31/2025</td><td>HOCW</td><td>Foreign exchange contracts</td><td>Exchange-traded</td><td>34834</td><td>Thousands</td></tr>
+                    </tbody>
+                </table>
+            </div>`,
+            net_raw: `
+            <div class="nested-preview-wrapper">
+                <table class="nested-table">
+                    <thead>
+                        <tr><th>approvalsnapshotid</th><th>accountingdate</th><th>businessunitacronym</th><th>clearingmechanism</th><th>assetorliability</th><th>roundingconvention</th><th>netderivativeamount</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>1767200325190</td><td>12/31/2025</td><td>HOCW</td><td>Exchange-traded</td><td>Liability</td><td>Thousands</td><td>0</td></tr>
+                        <tr><td>1767200325190</td><td>12/31/2025</td><td>HOCW</td><td>OTC-bilateral</td><td>Liability</td><td>Thousands</td><td>0</td></tr>
+                        <tr><td>1767200325190</td><td>12/31/2025</td><td>HOCW</td><td>Exchange-traded</td><td>Asset</td><td>Thousands</td><td>410</td></tr>
+                        <tr><td>1767200325190</td><td>12/31/2025</td><td>HOCW</td><td>OTC-bilateral</td><td>Asset</td><td>Thousands</td><td>109</td></tr>
+                    </tbody>
+                </table>
+            </div>`,
+            cash_raw: `
+            <div class="nested-preview-wrapper">
+                <table class="nested-table">
+                    <thead>
+                        <tr><th>approvalsnapshotid</th><th>accountingdate</th><th>businessunitacronym</th><th>clearingmechanism</th><th>assetorliability</th><th>roundingconvention</th><th>collateralnettingamount</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>1767200000000</td><td>12/31/2025</td><td>HOCW</td><td>Exchange-traded</td><td>Liability</td><td>Thousands</td><td>447</td></tr>
+                        <tr><td>1767200000000</td><td>12/31/2025</td><td>HOCW</td><td>OTC-bilateral</td><td>Liability</td><td>Thousands</td><td>15</td></tr>
+                        <tr><td>1767200000000</td><td>12/31/2025</td><td>HOCW</td><td>OTC-bilateral</td><td>Asset</td><td>Thousands</td><td>0</td></tr>
+                        <tr><td>1767200000000</td><td>12/31/2025</td><td>HOCW</td><td>Exchange-traded</td><td>Asset</td><td>Thousands</td><td>0</td></tr>
+                    </tbody>
+                </table>
+            </div>`,
+            counterparty_raw: `
+            <div class="nested-preview-wrapper">
+                <table class="nested-table">
+                    <thead>
+                        <tr><th>APPROVALSNAPSHOTID</th><th>ACCOUNTINGDATE</th><th>BUSINESSUNITACRONYM</th><th>CLEARINGMECHANISM</th><th>ASSETORLIABILITY</th><th>ROUNDINGCONVENTION</th><th>COUNTERPARTYNETTINGAMOUNT</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>1767200000000</td><td>12/31/2025</td><td>HOCW</td><td>Exchange-traded</td><td>Asset</td><td>Thousands</td><td>-6394</td></tr>
+                        <tr><td>1767200000000</td><td>12/31/2025</td><td>HOCW</td><td>OTC-bilateral</td><td>Asset</td><td>Thousands</td><td>-103</td></tr>
+                        <tr><td>1767200000000</td><td>12/31/2025</td><td>HOCW</td><td>OTC-bilateral</td><td>Liability</td><td>Thousands</td><td>103</td></tr>
+                        <tr><td>1767200000000</td><td>12/31/2025</td><td>HOCW</td><td>Exchange-traded</td><td>Liability</td><td>Thousands</td><td>6394</td></tr>
+                    </tbody>
+                </table>
+            </div>`,
+            gross_trans: `
+            <div class="nested-preview-wrapper">
+                <table class="nested-table">
+                    <thead>
+                        <tr><th>RowNumber</th><th>RowLabel</th><th>ShowHide</th><th>AccountingDate</th><th>BusinessUnitAcronym</th><th>ClearingMechanism</th><th>DerivativeAssets</th><th>DerivativeLiabilities</th><th>RoundingConvention</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>1.1</td><td>Commodity contracts</td><td>Show</td><td>12/31/2025</td><td>HOCW</td><td>Exchange-traded</td><td>4794</td><td>4443</td><td>Thousands</td></tr>
+                        <tr><td>1T</td><td>Total commodity contracts</td><td>Show</td><td>12/31/2025</td><td>HOCW</td><td></td><td>4794</td><td>4443</td><td>Thousands</td></tr>
+                        <tr><td>2.1</td><td>Equity contracts</td><td>Show</td><td>12/31/2025</td><td>HOCW</td><td>Exchange-traded</td><td>1136</td><td>2151</td><td>Thousands</td></tr>
+                        <tr><td>2.2</td><td>Equity contracts</td><td>Show</td><td>12/31/2025</td><td>HOCW</td><td>OTC-bilateral</td><td>34</td><td>48</td><td>Thousands</td></tr>
+                        <tr><td>2T</td><td>Total equity contracts</td><td>Show</td><td>12/31/2025</td><td>HOCW</td><td></td><td>1170</td><td>2199</td><td>Thousands</td></tr>
+                        <tr><td>3.1</td><td>Interest rate contracts</td><td>Show</td><td>12/31/2025</td><td>HOCW</td><td>Exchange-traded</td><td>789</td><td>248</td><td>Thousands</td></tr>
+                        <tr><td>3T</td><td>Total interest rate contracts</td><td>Show</td><td>12/31/2025</td><td>HOCW</td><td></td><td>789</td><td>248</td><td>Thousands</td></tr>
+                        <tr><td>4.1</td><td>Foreign exchange contracts</td><td>Show</td><td>12/31/2025</td><td>HOCW</td><td>Exchange-traded</td><td>86</td><td>0</td><td>Thousands</td></tr>
+                        <tr><td>4.2</td><td>Foreign exchange contracts</td><td>Show</td><td>12/31/2025</td><td>HOCW</td><td>OTC-bilateral</td><td>178</td><td>70</td><td>Thousands</td></tr>
+                        <tr><td>4T</td><td>Total foreign exchange contracts</td><td>Show</td><td>12/31/2025</td><td>HOCW</td><td></td><td>264</td><td>70</td><td>Thousands</td></tr>
+                        <tr><td>99.1T</td><td>Total Exchange-traded</td><td>Show</td><td>12/31/2025</td><td>HOCW</td><td></td><td>6805</td><td>6842</td><td>Thousands</td></tr>
+                        <tr><td>99.3T</td><td>Total OTC-bilateral</td><td>Show</td><td>12/31/2025</td><td>HOCW</td><td></td><td>212</td><td>118</td><td>Thousands</td></tr>
+                        <tr><td>100T</td><td>Total gross derivative contracts</td><td>Show</td><td>12/31/2025</td><td>HOCW</td><td></td><td>7017</td><td>6960</td><td>Thousands</td></tr>
+                    </tbody>
+                </table>
+            </div>`,
+            notional_trans: `
+            <div class="nested-preview-wrapper">
+                <table class="nested-table">
+                    <thead>
+                        <tr><th>RowNumber</th><th>RowLabel</th><th>ShowHide</th><th>AccountingDate</th><th>BusinessUnitAcronym</th><th>ClearingMechanism</th><th>DerivativeNotional</th><th>RoundingConvention</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>1.1</td><td>Interest rate contracts</td><td>Show</td><td>12/31/2025</td><td>HOCW</td><td>Exchange-traded</td><td>1249120</td><td>Thousands</td></tr>
+                        <tr><td>1T</td><td>Total interest rate contracts</td><td>Show</td><td>12/31/2025</td><td>HOCW</td><td></td><td>1249120</td><td>Thousands</td></tr>
+                        <tr><td>2.1</td><td>Equity contracts</td><td>Show</td><td>12/31/2025</td><td>HOCW</td><td>Exchange-traded</td><td>1108794</td><td>Thousands</td></tr>
+                        <tr><td>2.2</td><td>Equity contracts</td><td>Show</td><td>12/31/2025</td><td>HOCW</td><td>OTC-bilateral</td><td>18581</td><td>Thousands</td></tr>
+                        <tr><td>2T</td><td>Total equity contracts</td><td>Show</td><td>12/31/2025</td><td>HOCW</td><td></td><td>1127375</td><td>Thousands</td></tr>
+                        <tr><td>3.1</td><td>Commodity contracts</td><td>Show</td><td>12/31/2025</td><td>HOCW</td><td>Exchange-traded</td><td>709548</td><td>Thousands</td></tr>
+                        <tr><td>3T</td><td>Total commodity contracts</td><td>Show</td><td>12/31/2025</td><td>HOCW</td><td></td><td>709548</td><td>Thousands</td></tr>
+                        <tr><td>4.1</td><td>Foreign exchange contracts</td><td>Show</td><td>12/31/2025</td><td>HOCW</td><td>Exchange-traded</td><td>34834</td><td>Thousands</td></tr>
+                        <tr><td>4.2</td><td>Foreign exchange contracts</td><td>Show</td><td>12/31/2025</td><td>HOCW</td><td>OTC-bilateral</td><td>160823</td><td>Thousands</td></tr>
+                        <tr><td>4T</td><td>Total foreign exchange contracts</td><td>Show</td><td>12/31/2025</td><td>HOCW</td><td></td><td>195657</td><td>Thousands</td></tr>
+                        <tr><td>99.1T</td><td>Total Exchange-traded</td><td>Show</td><td>12/31/2025</td><td>HOCW</td><td></td><td>3102296</td><td>Thousands</td></tr>
+                        <tr><td>99.3T</td><td>Total OTC-bilateral</td><td>Show</td><td>12/31/2025</td><td>HOCW</td><td></td><td>179404</td><td>Thousands</td></tr>
+                        <tr><td>100T</td><td>Total gross derivative contracts</td><td>Show</td><td>12/31/2025</td><td>HOCW</td><td></td><td>3281700</td><td>Thousands</td></tr>
+                    </tbody>
+                </table>
+            </div>`,
+            net_trans: `
+            <div class="nested-preview-wrapper">
+                <table class="nested-table">
+                    <thead>
+                        <tr><th>rn</th><th>RowNumber</th><th>RowLabel</th><th>AccountingDate</th><th>BU</th><th>DerivativeAssets</th><th>DerivativeLiabilities</th><th>ShowHide</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>1</td><td>3.1</td><td>Total Exchange-traded</td><td>12/31/2025</td><td>HOCW</td><td>410</td><td>0</td><td>Show</td></tr>
+                        <tr><td>2</td><td>3.3</td><td>Total OTC-bilateral</td><td>12/31/2025</td><td>HOCW</td><td>109</td><td>0</td><td>Show</td></tr>
+                        <tr><td>3</td><td>3T</td><td>Total net derivative contracts</td><td>12/31/2025</td><td>HOCW</td><td>519</td><td>0</td><td>Show</td></tr>
+                    </tbody>
+                </table>
+            </div>`,
+            cash_trans: `
+            <div class="nested-preview-wrapper">
+                <table class="nested-table">
+                    <thead>
+                        <tr><th>rn</th><th>RowNumber</th><th>RowLabel</th><th>AccountingDate</th><th>BU</th><th>DerivativeAssets</th><th>DerivativeLiabilities</th><th>ShowHide</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>1</td><td>2.1</td><td>Exchange</td><td>12/31/2025</td><td>HOCW</td><td>0</td><td>-447</td><td>Show</td></tr>
+                        <tr><td>2</td><td>2.3</td><td>OTC-</td><td>12/31/2025</td><td>HOCW</td><td>0</td><td>-15</td><td>Show</td></tr>
+                        <tr><td>3</td><td>2T</td><td>Total cash</td><td>12/31/2025</td><td>HOCW</td><td>0</td><td>-462</td><td>Show</td></tr>
+                    </tbody>
+                </table>
+            </div>`,
+            counterparty_trans: `
+            <div class="nested-preview-wrapper">
+                <table class="nested-table">
+                    <thead>
+                        <tr><th>rn</th><th>RowNumber</th><th>RowLabel</th><th>AccountingDate</th><th>BU</th><th>DerivativeAssets</th><th>DerivativeLiabilities</th><th>ShowHide</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>1</td><td>1.1</td><td>Exchange-traded</td><td>12/31/2025</td><td>HOCW</td><td>-6394</td><td>-6394</td><td>Show</td></tr>
+                        <tr><td>2</td><td>1.3</td><td>OTC-bilateral</td><td>12/31/2025</td><td>HOCW</td><td>-103</td><td>-103</td><td>Show</td></tr>
+                        <tr><td>3</td><td>1T</td><td>Total counterparty netting</td><td>12/31/2025</td><td>HOCW</td><td>-6497</td><td>-6497</td><td>Show</td></tr>
+                    </tbody>
+                </table>
+            </div>`,
+            gross_cons: `
+            <div class="nested-preview-wrapper">
+                <table class="nested-table">
+                    <thead>
+                        <tr><th>Row</th><th>Line Description / Category Elements</th><th>Derivative Assets ($ in thousands)</th><th>Derivative Liabilities ($ in thousands)</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>1</td><td>FAIR VALUE AS OF December 31, 2025</td><td></td><td></td></tr>
+                        <tr><td>2</td><td>($ in thousands)</td><td>Derivative Assets</td><td>Derivative Liabilities</td></tr>
+                        <tr><td>3</td><td>Gross derivative contracts</td><td></td><td></td></tr>
+                        <tr><td>4</td><td>Exchange-traded (Commodity contracts)</td><td>$4,794</td><td>$4,443</td></tr>
+                        <tr><td>5</td><td>Exchange-traded (Equity contracts)</td><td>1,136</td><td>2,151</td></tr>
+                        <tr><td>6</td><td>OTC-bilateral (Equity contracts)</td><td>34</td><td>48</td></tr>
+                        <tr><td>7</td><td>Exchange-traded (Interest rate contracts)</td><td>789</td><td>248</td></tr>
+                        <tr><td>8</td><td>Exchange-traded (Foreign exchange contracts)</td><td>86</td><td>0</td></tr>
+                        <tr><td>9</td><td>OTC-bilateral (Foreign exchange contracts)</td><td>178</td><td>70</td></tr>
+                        <tr><td>10</td><td>Total Exchange-traded</td><td>6,805</td><td>6,842</td></tr>
+                        <tr><td>11</td><td>Total OTC-bilateral</td><td>212</td><td>118</td></tr>
+                        <tr><td>12</td><td>Total gross derivative contracts</td><td>7,017</td><td>6,960</td></tr>
+                    </tbody>
+                </table>
+            </div>`,
+            notional_cons: `
+            <div class="nested-preview-wrapper">
+                <table class="nested-table">
+                    <thead>
+                        <tr><th>Row</th><th>Line Description / Notional Segments</th><th>Notional Volume ($ in thousands)</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>1</td><td>NOTIONAL AS OF December 31, 2025</td><td></td></tr>
+                        <tr><td>2</td><td>($ in thousands)</td><td></td></tr>
+                        <tr><td>3</td><td>Gross derivative contracts</td><td></td></tr>
+                        <tr><td>4</td><td>Exchange-traded (Interest rate contracts)</td><td>1,249,120.00</td></tr>
+                        <tr><td>5</td><td>Exchange-traded (Equity contracts)</td><td>1,108,794.00</td></tr>
+                        <tr><td>6</td><td>OTC-bilateral (Equity contracts)</td><td>18,581.00</td></tr>
+                        <tr><td>7</td><td>Exchange-traded (Commodity contracts)</td><td>709,548.00</td></tr>
+                        <tr><td>8</td><td>Exchange-traded (Foreign exchange contracts)</td><td>34,834.00</td></tr>
+                        <tr><td>9</td><td>OTC-bilateral (Foreign exchange contracts)</td><td>160,823.00</td></tr>
+                        <tr><td>10</td><td>Total Exchange-traded</td><td>3,102,296.00</td></tr>
+                        <tr><td>11</td><td>Total OTC-bilateral</td><td>179,404.00</td></tr>
+                        <tr><td>12</td><td>Total gross derivative contracts</td><td>3,281,700.00</td></tr>
+                    </tbody>
+                </table>
+            </div>`,
+            net_cons: `
+            <div class="nested-preview-wrapper">
+                <table class="nested-table">
+                    <thead>
+                        <tr><th>Row</th><th>Line Description</th><th>Derivative Assets ($ in thousands)</th><th>Derivative Liabilities ($ in thousands)</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>1</td><td>Net Derivative Contracts Summary</td><td></td><td></td></tr>
+                        <tr><td>2</td><td>Total Exchange-traded</td><td>410</td><td>0</td></tr>
+                        <tr><td>3</td><td>Total OTC-bilateral</td><td>109</td><td>0</td></tr>
+                        <tr><td>4</td><td>Total net derivative contracts</td><td>519</td><td>0</td></tr>
+                    </tbody>
+                </table>
+            </div>`,
+            cash_cons: `
+            <div class="nested-preview-wrapper">
+                <table class="nested-table">
+                    <thead>
+                        <tr><th>Row</th><th>Line Description</th><th>Derivative Assets ($ in thousands)</th><th>Derivative Liabilities ($ in thousands)</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>1</td><td>Cash Collateral Amount Summary</td><td></td><td></td></tr>
+                        <tr><td>2</td><td>Exchange-traded</td><td>0</td><td>(447)</td></tr>
+                        <tr><td>3</td><td>OTC-bilateral</td><td>0</td><td>(15)</td></tr>
+                        <tr><td>4</td><td>Total cash collateral</td><td>0</td><td>(462)</td></tr>
+                    </tbody>
+                </table>
+            </div>`,
+            counterparty_cons: `
+            <div class="nested-preview-wrapper">
+                <table class="nested-table">
+                    <thead>
+                        <tr><th>Row</th><th>Line Description</th><th>Derivative Assets ($ in thousands)</th><th>Derivative Liabilities ($ in thousands)</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>1</td><td>Counterparty Netting Summary</td><td></td><td></td></tr>
+                        <tr><td>2</td><td>Exchange-traded</td><td>(6,394)</td><td>(6,394)</td></tr>
+                        <tr><td>3</td><td>OTC-bilateral</td><td>(103)</td><td>(103)</td></tr>
+                        <tr><td>4</td><td>Total counterparty netting</td><td>(6,497)</td><td>(6,497)</td></tr>
+                    </tbody>
+                </table>
+            </div>`
+        };
+
+        function openDataPreview(fileName, category) {
+            const markup = snapshotDemoRecords[category];
+            document.getElementById('data-preview-title').innerHTML = ` 📊 Matrix View: ${fileName}`;
+            document.getElementById('data-preview-pane').innerHTML = markup ? markup : `<div style="padding:20px; color:var(--text-muted);">Historical archive data snapshot (No operational active layout).</div>`;
+            document.getElementById('data-preview-popup').classList.add('active');
+        }
+
+        document.getElementById('data-preview-close-btn').addEventListener('click', () => {
+            document.getElementById('data-preview-popup').classList.remove('active');
+        });
+
+        const popupRegistry = {
+            auth: {
+                title: "🔑 Authentication Gateway",
+                subtitle: "Verifies safe handshake protocols and checks system access codes.",
+                render: () => `<div class="pulse-key">🔑</div>`
+            },
+            src: {
+                title: "🗄️ Source System",
+                subtitle: "External systems that provide data for the automated processing pipeline.",
+                render: () => {
+                    let html = `<table class="explorer-table"><thead class="explorer-thead"><tr><th>File Name</th><th>Last updated</th><th>Type</th><th style="text-align: right;">Size</th></tr></thead><tbody>`;
+                    globalFileDatabase.slice(0, 10).forEach(file => {
+                        let isOld = file.name.includes("31-12-2024");
+                        let styleAttr = isOld ? 'style="opacity: 0.6;"' : '';
+                        let tag = isOld ? ' <span style="font-size:10px; padding:2px 5px; background:#475569; border-radius:3px; color:#cbd5e1; margin-left:5px;">ARCHIVE (2024)</span>' : '';
+                        html += `<tr class="explorer-row" ${styleAttr}><td><div class="explorer-name-cell"><span class="explorer-icon">📄</span><span>${file.name}${tag}</span></div></td><td class="explorer-date">${file.lastUpdated}</td><td class="explorer-type">${file.type}</td><td class="explorer-size">${file.size}</td></tr>`;
+                    });
+                    html += `</tbody></table>`;
+                    return html;
+                }
+            },
+            ext: {
+                title: "📥 Data Extraction",
+                subtitle: "Retrieves source files from the connected storage system for downstream processing.",
+                render: () => {
+                    let html = `<table class="explorer-table"><thead class="explorer-thead"><tr><th style="text-align: center;">View</th><th>Name</th><th>Last updated</th><th>Type</th><th style="text-align: right;">Size</th></tr></thead><tbody>`;
+                    let renderingIndex = 0;
+                    globalFileDatabase.slice(0, 10).forEach((file) => {
+                        if (file.extractable) {
+                            html += `<tr class="explorer-row hidden-row" id="ext-row-${renderingIndex}"><td style="text-align: center;"><button class="explorer-view-btn" onclick="openDataPreview('${file.name}', '${file.category}')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg></button></td><td><div class="explorer-name-cell"><span class="explorer-icon">📄</span><span>${file.name}</span></div></td><td class="explorer-date">${file.lastUpdated}</td><td class="explorer-type">${file.type}</td><td class="explorer-size">${file.size}</td></tr>`;
+                            renderingIndex++;
+                        }
+                    });
+                    html += `</tbody></table>`;
+                    return html;
+                },
+                postRender: () => {
+                    let currentTrack = 0;
+                    if(extractionTimer) clearInterval(extractionTimer);
+                    extractionTimer = setInterval(() => {
+                        let targetRow = document.getElementById(`ext-row-${currentTrack}`);
+                        if(targetRow) {
+                            targetRow.classList.remove('hidden-row');
+                            currentTrack++;
+                        } else {
+                            clearInterval(extractionTimer);
+                        }
+                    }, 350);
+                }
+            },
+            trn: {
+                title: "⚙️ Transformation Engine",
+                subtitle: "Maps, filters, and reshapes source data into the target reporting structure.",
+                render: () => {
+                    let html = `<table class="explorer-table"><thead class="explorer-thead"><tr><th>File Target Name</th><th>Transformation status</th><th style="text-align: center;">Action</th></tr></thead><tbody>`;
+                    globalFileDatabase.slice(10, 15).forEach((file, index) => {
+                        html += `<tr class="explorer-row"><td><div class="explorer-name-cell"><span class="explorer-icon">⚙️</span><span>${file.name}</span></div></td><td><span id="trn-status-${index}" class="status-spinner">Processing...</span></td><td style="text-align: center;"><button id="trn-btn-${index}" class="explorer-view-btn" disabled onclick="openDataPreview('${file.name}', '${file.category}')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg></button></td></tr>`;
+                    });
+                    html += `</tbody></table>`;
+                    return html;
+                },
+                postRender: () => {
+                    if(transTimer) clearTimeout(transTimer);
+                    transTimer = setTimeout(() => {
+                        globalFileDatabase.slice(10, 15).forEach((_, index) => {
+                            const statusEl = document.getElementById(`trn-status-${index}`);
+                            const btnEl = document.getElementById(`trn-btn-${index}`);
+                            if (statusEl && btnEl) {
+                                statusEl.className = "";
+                                statusEl.style.color = "var(--accent-green)";
+                                statusEl.innerHTML = "✅ Transformed";
+                                btnEl.removeAttribute("disabled");
+                            }
+                        });
+                    }, 1000);
+                }
+            },
+            cons: {
+                title: "🏢 Consolidation Engine",
+                subtitle: "Integrates transformed datasets to produce a unified financial view.",
+                render: () => {
+                    let html = `<table class="explorer-table"><thead class="explorer-thead"><tr><th>Consolidated File Target</th><th>Status</th><th style="text-align: center;">Action</th></tr></thead><tbody>`;
+                    globalFileDatabase.slice(15, 20).forEach((file, index) => {
+                        html += `<tr class="explorer-row"><td><div class="explorer-name-cell"><span class="explorer-icon">🏢</span><span>${file.name}</span></div></td><td><span id="cons-status-${index}" class="status-spinner">Processing...</span></td><td style="text-align: center;"><button id="cons-btn-${index}" class="explorer-view-btn" disabled onclick="openDataPreview('${file.name}', '${file.category}')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg></button></td></tr>`;
+                    });
+                    html += `</tbody></table>`;
+                    return html;
+                },
+                postRender: () => {
+                    if(consTimer) clearTimeout(consTimer);
+                    consTimer = setTimeout(() => {
+                        globalFileDatabase.slice(15, 20).forEach((_, index) => {
+                            const statusEl = document.getElementById(`cons-status-${index}`);
+                            const btnEl = document.getElementById(`cons-btn-${index}`);
+                            if (statusEl && btnEl) {
+                                statusEl.className = "";
+                                statusEl.style.color = "var(--accent-green)";
+                                statusEl.innerHTML = "✅ Consolidated";
+                                btnEl.removeAttribute("disabled");
+                            }
+                        });
+                    }, 1000);
+                }
+            },
+ pub: {
+                title: "🖥️ Final Published Derivative Disclosure Report",
+                subtitle: "Generates and publishes final reports from consolidated datasets.",
+                render: () => `
+                    <div class="report-book">
+                        <div class="report-header">
+                            <div class="report-title">Generated Reports</div>
+                           
+                        </div>
+                        
+                        <div class="report-tabs">
+                            <button class="report-tab-btn active" onclick="switchPubTab(event, 'sheet-gross')">Gross Sheet</button>
+                            <button class="report-tab-btn" onclick="switchPubTab(event, 'sheet-notional')">Notional Sheet</button>
+                            <button class="report-tab-btn" onclick="switchPubTab(event, 'sheet-net')">Net Sheet</button>
+                            <button class="report-tab-btn" onclick="switchPubTab(event, 'sheet-cash')">Cash Sheet</button>
+                            <button class="report-tab-btn" onclick="switchPubTab(event, 'sheet-counterparty')">Counterparty Sheet</button>
+                        </div>
+
+                        <!-- Table 1: Gross -->
+                        <div id="sheet-gross" class="report-sheet-pane active">
+                            <table class="pub-white-table">
+                                <thead>
+                                    <tr><th>Gross</th><th>Derivative Assets ($ in thousands)</th><th>Derivative Liabilities ($ in thousands)</th></tr>
+                                </thead>
+                                <tbody>
+                                    <tr><td>Exchange-traded (Commodity contracts)</td><td>$4,794</td><td>$4,443</td></tr>
+                                    <tr><td>Exchange-traded (Equity contracts)</td><td>1,136</td><td>2,151</td></tr>
+                                    <tr><td>OTC-bilateral (Equity contracts)</td><td>34</td><td>48</td></tr>
+                                    <tr><td>Exchange-traded (Interest rate contracts)</td><td>789</td><td>248</td></tr>
+                                    <tr><td>Exchange-traded (Foreign exchange contracts)</td><td>86</td><td>0</td></tr>
+                                    <tr><td>OTC-bilateral (Foreign exchange contracts)</td><td>178</td><td>70</td></tr>
+                                    <tr><td><strong>Total gross derivative contracts</strong></td><td><strong>$7,017</strong></td><td><strong>$6,960</strong></td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Table 2: Notional -->
+                        <div id="sheet-notional" class="report-sheet-pane">
+                            <table class="pub-white-table">
+                                <thead>
+                                    <tr><th>Notional</th><th>Notional Volume ($ in thousands)</th></tr>
+                                </thead>
+                                <tbody>
+                                    <tr><td>Exchange-traded (Interest rate contracts)</td><td>1,249,120.00</td></tr>
+                                    <tr><td>Exchange-traded (Equity contracts)</td><td>1,108,794.00</td></tr>
+                                    <tr><td>OTC-bilateral (Equity contracts)</td><td>18,581.00</td></tr>
+                                    <tr><td>Exchange-traded (Commodity contracts)</td><td>709,548.00</td></tr>
+                                    <tr><td>Exchange-traded (Foreign exchange contracts)</td><td>34,834.00</td></tr>
+                                    <tr><td>OTC-bilateral (Foreign exchange contracts)</td><td>160,823.00</td></tr>
+                                    <tr><td><strong>Total gross notional volume</strong></td><td><strong>3,281,700.00</strong></td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Table 3: Net -->
+                        <div id="sheet-net" class="report-sheet-pane">
+                            <table class="pub-white-table">
+                                <thead>
+                                    <tr><th>Net</th><th>Derivative Assets ($ in thousands)</th><th>Derivative Liabilities ($ in thousands)</th></tr>
+                                </thead>
+                                <tbody>
+                                    <tr><td>Total Exchange-traded</td><td>410</td><td>0</td></tr>
+                                    <tr><td>Total OTC-bilateral</td><td>109</td><td>0</td></tr>
+                                    <tr><td><strong>Total net derivative contracts</strong></td><td><strong>519</strong></td><td><strong>0</strong></td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Table 4: Cash -->
+                        <div id="sheet-cash" class="report-sheet-pane">
+                            <table class="pub-white-table">
+                                <thead>
+                                    <tr><th>Cash</th><th>Derivative Assets ($ in thousands)</th><th>Derivative Liabilities ($ in thousands)</th></tr>
+                                </thead>
+                                <tbody>
+                                    <tr><td>Exchange-traded margin</td><td>0</td><td>(447)</td></tr>
+                                    <tr><td>OTC-bilateral margin</td><td>0</td><td>(15)</td></tr>
+                                    <tr><td><strong>Total cash collateral</strong></td><td><strong>0</strong></td><td><strong>(462)</strong></td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Table 5: Counterparty -->
+                        <div id="sheet-counterparty" class="report-sheet-pane">
+                            <table class="pub-white-table">
+                                <thead>
+                                    <tr><th>Counterparty</th><th>Derivative Assets ($ in thousands)</th><th>Derivative Liabilities ($ in thousands)</th></tr>
+                                </thead>
+                                <tbody>
+                                    <tr><td>Exchange-traded netting agreements</td><td>(6,394)</td><td>(6,394)</td></tr>
+                                    <tr><td>OTC-bilateral netting agreements</td><td>(103)</td><td>(103)</td></tr>
+                                    <tr><td><strong>Total counterparty netting</strong></td><td><strong>(6,497)</strong></td><td><strong>(6,497)</strong></td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>`
+            }
+        };
+
+         function switchPubTab(evt, sheetId) {
+            const panes = document.querySelectorAll('.report-sheet-pane');
+            panes.forEach(p => p.classList.remove('active'));
+            const buttons = document.querySelectorAll('.report-tab-btn');
+            buttons.forEach(b => b.classList.remove('active'));
+            document.getElementById(sheetId).classList.add('active');
+            evt.currentTarget.classList.add('active');
+        }
+
+        const popupEl = document.getElementById('node-popup');
+        const popTitle = document.getElementById('pop-title');
+        const popSubtitle = document.getElementById('pop-subtitle');
+        const popPane = document.getElementById('pop-pane');
+        
+        function openModal(key) {
+            const cfg = popupRegistry[key];
+            if (!cfg) return;
+            popTitle.innerHTML = cfg.title;
+            popSubtitle.innerText = cfg.subtitle;
+            popPane.innerHTML = cfg.render();
+            popupEl.classList.add('active');
+            if(cfg.postRender) cfg.postRender();
+        }
+
+        document.getElementById('popup-close-btn').addEventListener('click', () => {
+            if(extractionTimer) clearInterval(extractionTimer);
+            if(transTimer) clearTimeout(transTimer);
+            if(consTimer) clearTimeout(consTimer);
+            popupEl.classList.remove('active');
+        });
+
+        document.querySelectorAll('.node').forEach(n => n.addEventListener('click', () => openModal(n.getAttribute('data-node'))));
+
+        function adjustConnectionLines() {
+            const canvas = document.getElementById('pipeline-canvas').getBoundingClientRect();
+            const nAuth = document.getElementById('node-auth').getBoundingClientRect();
+            const nSrc  = document.getElementById('node-src').getBoundingClientRect();
+            const nExt  = document.getElementById('node-ext').getBoundingClientRect();
+            const nTrn  = document.getElementById('node-trn').getBoundingClientRect();
+            const nCons = document.getElementById('node-cons').getBoundingClientRect();
+            const nPub  = document.getElementById('node-pub').getBoundingClientRect();
+
+            function setLineCoords(lineId, leftBox, rightBox) {
+                const line = document.getElementById(lineId);
+                const x1 = (leftBox.left + leftBox.width / 2 + 32) - canvas.left;
+                const y1 = (leftBox.top + 32) - canvas.top; 
+                const x2 = (rightBox.left + rightBox.width / 2 - 32) - canvas.left;
+                const y2 = (rightBox.top + 32) - canvas.top;
+                line.setAttribute('x1', x1); line.setAttribute('y1', y1);
+                line.setAttribute('x2', x2); line.setAttribute('y2', y2);
+            }
+
+            setLineCoords('line-auth-src', nAuth, nSrc);
+            setLineCoords('line-src-ext', nSrc, nExt);
+            setLineCoords('line-ext-trn', nExt, nTrn);
+            setLineCoords('line-trn-cons', nTrn, nCons);
+            setLineCoords('line-cons-pub', nCons, nPub);
+        }
+
+        window.addEventListener('resize', adjustConnectionLines);
+        setTimeout(adjustConnectionLines, 100);
+
+        async function runPipeline() {
+            const nodes = {
+                auth: document.getElementById('node-auth'), src: document.getElementById('node-src'),
+                ext: document.getElementById('node-ext'), trn: document.getElementById('node-trn'),
+                cons: document.getElementById('node-cons'), pub: document.getElementById('node-pub')
+            };
+
+            const lines = {
+                authSrc: document.getElementById('line-auth-src'), srcExt: document.getElementById('line-src-ext'),
+                extTrn: document.getElementById('line-ext-trn'), trnCons: document.getElementById('line-trn-cons'),
+                consPub: document.getElementById('line-cons-pub')
+            };
+
+            const packets = {
+                sig: [document.getElementById('p-sig')],
+                f1: [document.getElementById('p-f1-1'), document.getElementById('p-f1-2'), document.getElementById('p-f1-3'), document.getElementById('p-f1-4'), document.getElementById('p-f1-5')],
+                f2: [document.getElementById('p-f2-1'), document.getElementById('p-f2-2'), document.getElementById('p-f2-3'), document.getElementById('p-f2-4'), document.getElementById('p-f2-5')],
+                f3: [document.getElementById('p-f3-1'), document.getElementById('p-f3-2'), document.getElementById('p-f3-3'), document.getElementById('p-f3-4'), document.getElementById('p-f3-5')],
+                rep: [document.getElementById('p-rep')]
+            };
+
+            const delay = ms => new Promise(r => setTimeout(r, ms));
+
+            function clearStatus() {
+                Object.values(nodes).forEach(n => n.classList.remove('processing', 'completed'));
+                Object.values(lines).forEach(l => l.classList.remove('active-path'));
+                Object.values(packets).flat().forEach(p => { p.style.opacity = '0'; p.style.transition = 'none'; });
+            }
+
+            function streamFilesOneByOne(packetArr, fromNode, toNode) {
+                return new Promise(async (resolve) => {
+                    const canvas = document.getElementById('pipeline-canvas').getBoundingClientRect();
+                    const b1 = fromNode.getBoundingClientRect();
+                    const b2 = toNode.getBoundingClientRect();
+                    const startX = (b1.left + b1.width / 2) - canvas.left - 8;
+                    const startY = (b1.top + 22) - canvas.top;
+                    const endX = (b2.left + b2.width / 2) - canvas.left - 8;
+                    const endY = (b2.top + 22) - canvas.top;
+
+                    for (let i = 0; i < packetArr.length; i++) {
+                        const p = packetArr[i];
+                        p.style.transition = 'none';
+                        p.style.left = `${startX}px`; p.style.top = `${startY}px`; p.style.opacity = '1';
+                        await new Promise(r => requestAnimationFrame(r));
+                        p.style.transition = 'all 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94)';
+                        p.style.left = `${endX}px`; p.style.top = `${endY}px`;
+                        setTimeout(() => { p.style.opacity = '0'; }, 800);
+                        await delay(250);
+                    }
+                    setTimeout(resolve, 600);
+                });
+            }
+
+            while(true) {
+                clearStatus();
+                await delay(400);
+
+                nodes.auth.classList.add('processing');
+                await delay(2000);
+                nodes.auth.classList.remove('processing');
+                nodes.auth.classList.add('completed');
+                lines.authSrc.classList.add('active-path');
+                await streamFilesOneByOne(packets.sig, nodes.auth, nodes.src);
+                
+                nodes.src.classList.add('processing');
+                await delay(2000);
+                nodes.src.classList.remove('processing');
+                nodes.src.classList.add('completed');
+                lines.srcExt.classList.add('active-path');
+                await streamFilesOneByOne(packets.f1, nodes.src, nodes.ext);
+
+                nodes.ext.classList.add('processing');
+                await delay(2000);
+                nodes.ext.classList.remove('processing');
+                nodes.ext.classList.add('completed');
+                lines.extTrn.classList.add('active-path');
+                await streamFilesOneByOne(packets.f2, nodes.ext, nodes.trn);
+
+                nodes.trn.classList.add('processing');
+                await delay(2000);
+                nodes.trn.classList.remove('processing');
+                nodes.trn.classList.add('completed');
+                lines.trnCons.classList.add('active-path');
+                await streamFilesOneByOne(packets.f3, nodes.trn, nodes.cons);
+
+                nodes.cons.classList.add('processing');
+                await delay(2000);
+                nodes.cons.classList.remove('processing');
+                nodes.cons.classList.add('completed');
+                lines.consPub.classList.add('active-path');
+                await streamFilesOneByOne(packets.rep, nodes.cons, nodes.pub);
+
+                nodes.pub.classList.add('completed');
+                await delay(6000);
+            }
+        }
+
+        window.addEventListener('load', runPipeline);
+    </script>
+</body>
+</html>
